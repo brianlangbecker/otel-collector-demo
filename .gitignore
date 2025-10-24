@@ -1,0 +1,30 @@
+# Java
+java-app/target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/

@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: statsd-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "8125:8125/udp"  # StatsD receiver
+      - "4317:4317"      # OTLP gRPC receiver
+      - "4318:4318"      # OTLP HTTP receiver
+      - "8888:8888"      # Prometheus metrics
+      - "13133:13133"    # Health check
+    environment:
+      - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
+    restart: unless-stopped
+    networks:
+      - statsd-demo
+
+  java-app:
+    build:
+      context: ./java-app
+      dockerfile: Dockerfile
+    container_name: statsd-java-app
+    ports:
+      - "8080:8080"
+    environment:
+      # OpenTelemetry Java Agent Configuration
+      - OTEL_SERVICE_NAME=demo-app
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=demo,service.version=1.0.0
+      # Adjust sampling for demo purposes (100% sampling)
+      - OTEL_TRACES_SAMPLER=always_on
+      # Enable detailed logging for debugging
+      - OTEL_INSTRUMENTATION_COMMON_LOGGING_ENABLED=true
+    depends_on:
+      - otel-collector
+    networks:
+      - statsd-demo
+    restart: unless-stopped
+
+networks:
+  statsd-demo:
+    driver: bridge
