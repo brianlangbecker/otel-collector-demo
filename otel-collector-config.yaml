@@ -70,11 +70,9 @@ exporters:
       "x-honeycomb-team": "${HONEYCOMB_API_KEY}"
       "x-honeycomb-dataset": "demo-logs"
 
-  # Debug exporter for local debugging
+  # Debug exporter for local debugging (no sampling)
   debug:
     verbosity: detailed
-    sampling_initial: 5
-    sampling_thereafter: 200
 
 service:
   pipelines:
@@ -98,4 +96,4 @@ service:
 
   telemetry:
     logs:
-      level: info
+      level: debug
