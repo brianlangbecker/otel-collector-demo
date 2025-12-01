@@ -1,0 +1,51 @@
+services:
+  # OpenTelemetry Collector - Single destination that forwards to BOTH backends
+  # NO CODE CHANGES NEEDED - Just point apps here!
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector-prod
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-multi-backend.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "8125:8125/udp"  # StatsD/DogStatsD receiver
+      - "4317:4317"      # OTLP gRPC
+      - "4318:4318"      # OTLP HTTP
+      - "8888:8888"      # Prometheus metrics (collector's own metrics)
+      - "13133:13133"    # Health check
+    environment:
+      - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
+      - DATADOG_API_KEY=${DATADOG_API_KEY:-not_configured}
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:13133 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Example: Java App (NO CODE CHANGES - Pure StatsD via Micrometer)
+  java-app:
+    build:
+      context: ./java-app
+      dockerfile: Dockerfile
+    container_name: java-app-prod
+    ports:
+      - "8080:8080"
+    environment:
+      # StatsD Configuration - Just point to OTel Collector!
+      - STATSD_HOST=otel-collector
+      - STATSD_PORT=8125
+      - ENVIRONMENT=production
+    depends_on:
+      - otel-collector
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
+

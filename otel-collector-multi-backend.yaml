@@ -1,0 +1,87 @@
+# OpenTelemetry Collector Configuration
+# Multi-Backend: Sends metrics to BOTH Datadog and Honeycomb
+# NO APPLICATION CODE CHANGES NEEDED!
+
+receivers:
+  # StatsD Receiver - receives DogStatsD format metrics
+  statsd:
+    endpoint: "0.0.0.0:8125"
+    aggregation_interval: 60s
+    enable_metric_type: true
+    is_monotonic_counter: true
+    timer_histogram_mapping:
+      - statsd_type: "histogram"
+        observer_type: "histogram"
+      - statsd_type: "timing"
+        observer_type: "histogram"
+
+  # OTLP Receiver - for OpenTelemetry native instrumentation
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+  # Prometheus - scrape own metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['localhost:8888']
+
+processors:
+  # Memory limiter - prevent OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Batch processor - batch metrics for efficiency
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+  # Resource processor - add deployment info
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: service.namespace
+        value: otel-collector
+        action: upsert
+
+exporters:
+  # Export to Honeycomb
+  otlp/honeycomb:
+    endpoint: "api.honeycomb.io:443"
+    headers:
+      "x-honeycomb-team": "${env:HONEYCOMB_API_KEY}"
+
+  # Export to Datadog
+  datadog:
+    api:
+      key: "${env:DATADOG_API_KEY}"
+      site: datadoghq.com  # Change to datadoghq.eu for EU
+
+  # Debug exporter - for testing
+  debug:
+    verbosity: normal
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  pipelines:
+    # Metrics pipeline - sends StatsD metrics to BOTH Honeycomb and Datadog
+    metrics:
+      receivers: [statsd, prometheus]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/honeycomb, datadog, debug]
+
+  telemetry:
+    logs:
+      level: info
+

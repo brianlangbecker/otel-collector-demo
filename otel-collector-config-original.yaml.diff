@@ -1,0 +1,41 @@
+diff --git a/otel-collector-config.yaml b/otel-collector-config.yaml
+index 29592f7..3818ed7 100644
+--- a/otel-collector-config.yaml
++++ b/otel-collector-config.yaml
+@@ -1,15 +1,21 @@
+ receivers:
+-  # StatsD receiver for metrics
++  # StatsD receiver for metrics FORWARDED from Datadog Agent
++  # Port 8126 receives metrics forwarded by Datadog Agent (dogstatsd_forward_port)
++  # Apps send to Datadog Agent on 8125, Agent forwards to OTel Collector on 8126
+   statsd:
+-    endpoint: "0.0.0.0:8125"
++    endpoint: "0.0.0.0:8126"
+     aggregation_interval: 60s
+     enable_metric_type: true
+     is_monotonic_counter: false
++    # DogStatsD tag parsing (format: metric.name:value|type|#tag1:value1,tag2:value2)
++    # The receiver parses DogStatsD tags by default when present
+     timer_histogram_mapping:
+       - statsd_type: "histogram"
+         observer_type: "histogram"
+       - statsd_type: "timing"
+         observer_type: "histogram"
++      - statsd_type: "distribution"
++        observer_type: "histogram"
+ 
+   # OTLP receiver for traces and logs
+   otlp:
+@@ -47,6 +53,12 @@ processors:
+       - key: deployment.environment
+         value: demo
+         action: upsert
++      - key: forwarding.source
++        value: datadog-agent
++        action: upsert
++      - key: dual_send
++        value: "true"
++        action: upsert
+ 
+ exporters:
+   # Honeycomb exporter for metrics

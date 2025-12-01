@@ -1,50 +1,91 @@
-version: '3.8'
-
 services:
+  # Datadog Agent - Receives metrics from applications
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: datadog-agent
+    restart: unless-stopped
+    environment:
+      - DD_API_KEY=${DATADOG_API_KEY:-not_configured}
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_DOGSTATSD_PORT=8125
+      - DD_LOG_LEVEL=info
+      - DD_APM_ENABLED=false
+      - DD_PROCESS_AGENT_ENABLED=false
+      - DD_LOGS_ENABLED=false
+    ports:
+      - "8125:8125/udp"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "agent", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # OpenTelemetry Collector - Receives metrics from applications
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
-    container_name: statsd-otel-collector
+    container_name: otel-collector
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
-      - "8125:8125/udp"  # StatsD receiver
-      - "4317:4317"      # OTLP gRPC receiver
-      - "4318:4318"      # OTLP HTTP receiver
+      - "8126:8125/udp"  # StatsD receiver (external 8126, internal 8125 for Docker network)
+      - "4317:4317"      # OTLP gRPC
+      - "4318:4318"      # OTLP HTTP
       - "8888:8888"      # Prometheus metrics
       - "13133:13133"    # Health check
     environment:
       - HONEYCOMB_API_KEY=${HONEYCOMB_API_KEY}
     restart: unless-stopped
     networks:
-      - statsd-demo
+      - app-network
 
-  java-app:
+  # Java App - Solution 2: Sends metrics to BOTH Datadog Agent AND OTel Collector
+  java-app-solution2:
     build:
       context: ./java-app
       dockerfile: Dockerfile
-    container_name: statsd-java-app
+    container_name: java-app-solution2
     ports:
-      - "8080:8080"
+      - "8082:8080"
     environment:
-      # OpenTelemetry Java Agent Configuration
-      - OTEL_SERVICE_NAME=demo-app
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - OTEL_TRACES_EXPORTER=otlp
-      - OTEL_METRICS_EXPORTER=otlp
-      - OTEL_LOGS_EXPORTER=otlp
-      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=demo,service.version=1.0.0
-      # Adjust sampling for demo purposes (100% sampling)
-      - OTEL_TRACES_SAMPLER=always_on
-      # Enable detailed logging for debugging
-      - OTEL_INSTRUMENTATION_COMMON_LOGGING_ENABLED=true
+      # Destination 1: Datadog Agent (localhost:8125)
+      - STATSD_HOST_DATADOG=datadog-agent
+      - STATSD_PORT_DATADOG=8125
+      
+      # Destination 2: OTel Collector (otel-host:8125)
+      - STATSD_HOST_OTEL=otel-collector
+      - STATSD_PORT_OTEL=8125
+      
+      - ENVIRONMENT=solution2-dual
+    depends_on:
+      - datadog-agent
+      - otel-collector
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Java App - Solution 1: Sends metrics ONLY to OpenTelemetry Collector
+  java-app-solution1:
+    build:
+      context: ./java-app-solution1
+      dockerfile: Dockerfile
+    container_name: java-app-solution1
+    ports:
+      - "8081:8080"
+    environment:
+      # Direct to OTel Collector only (no Datadog Agent)
+      - STATSD_HOST=otel-collector
+      - STATSD_PORT=8125
+      
+      - ENVIRONMENT=solution1-otel-only
     depends_on:
       - otel-collector
     networks:
-      - statsd-demo
+      - app-network
     restart: unless-stopped
 
 networks:
-  statsd-demo:
+  app-network:
     driver: bridge
